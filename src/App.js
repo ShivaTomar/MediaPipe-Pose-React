@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import pose, { Pose } from '@mediapipe/pose';
+import pose, { Pose, POSE_LANDMARKS_LEFT, POSE_LANDMARKS_RIGHT } from '@mediapipe/pose';
 import { Camera } from '@mediapipe/camera_utils';
 import * as drawingUtils from "@mediapipe/drawing_utils"
 
@@ -38,7 +38,8 @@ function App() {
         // await camera.start();
 
         const img = new Image();
-        img.src = 'tree-pose-hands-open.png';
+        // img.src = 'tree-pose-hands-open.png';
+        img.src = './pose-images/t-pose-2.jpg'
         // document.body.appendChild(img)
 
         mpPose.send({ image: img })
@@ -56,9 +57,13 @@ function App() {
     console.log(results);
 
     const canvasElement = canvasRef.current
-    canvasElement.height = 1080;
-    canvasElement.width = 1080
+    canvasElement.width = results.image.width;
+    canvasElement.height = results.image.height;
+
     const canvasCtx = canvasElement.getContext("2d")
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
     const data = results.poseLandmarks.map(landmark => {
       return {
@@ -70,14 +75,7 @@ function App() {
     });
 
     console.log('data', data);
-
-    canvasCtx.save();
-    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-    console.log(pose.POSE_LANDMARKS_LEFT);
-    console.log(pose.POSE_LANDMARKS);
-    console.log(pose.POSE_CONNECTIONS);
+    console.log("pose landmarks", pose.POSE_LANDMARKS);
 
     let x = pose.POSE_LANDMARKS_LEFT;
     x.LEFT_EAR = null;
@@ -100,7 +98,7 @@ function App() {
     z.RIGHT_THUMB = null;
 
     let connectors = pose.POSE_CONNECTIONS.map((conn, i) => {
-      console.log(i);
+      // console.log(i);
       if (i < 9) {
         conn = [];
       }
@@ -112,38 +110,146 @@ function App() {
       return conn;
     });
 
-    console.log(connectors);
+    // console.log(connectors);
 
-    let a = angleBetweenLines(
-      data[24].x,
-      data[24].y,
-      data[26].x,
-      data[26].y,
-      data[28].x,
-      data[28].y,
-    )
+    // console.log('right angle', (right));
+    // console.log('left angle', (left));
+    // console.log('left upper pose angle', calRightUpperPoseAngles(data));
+    // console.log('right upper pose angle', calLeftUpperPoseAngles(data));
+    // console.log('right lower pose angle', calRightLowerPoseAngles(data));
+    // console.log('left lower pose angle', calLeftLowerPoseAngles(data));
+    // console.log('hip pose angle', calHipsToTorsoAngles(data));
 
-    console.log('angle', a);
+    // console.log('left pose angles', calLeftPoseAngles(data));
+
+    console.log('full pose angles', calFullPoseAngles(data));
 
     if (results.poseLandmarks) {
-      drawingUtils.drawConnectors(canvasCtx, results.poseLandmarks, connectors, { visibilityMin: 0.65, color: 'white' });
-      drawingUtils.drawLandmarks(canvasCtx, Object.values(x)
-        .map(index => results.poseLandmarks[index]), { visibilityMin: 0.65, color: 'white', fillColor: 'rgb(255,138,0)' });
-      drawingUtils.drawLandmarks(canvasCtx, Object.values(z)
-        .map(index => results.poseLandmarks[index]), { visibilityMin: 0.65, color: 'white', fillColor: 'rgb(0,217,231)' });
+      drawingUtils
+        .drawConnectors(canvasCtx, results.poseLandmarks, connectors, { visibilityMin: 0.65, color: 'white' });
+      drawingUtils
+        .drawLandmarks(canvasCtx, Object.values(x)
+          .map(index => results.poseLandmarks[index]), { visibilityMin: 0.65, color: 'white', fillColor: 'rgb(255,138,0)' });
+      drawingUtils
+        .drawLandmarks(canvasCtx, Object.values(z)
+          .map(index => results.poseLandmarks[index]), { visibilityMin: 0.65, color: 'white', fillColor: 'rgb(0,217,231)' });
     }
+
     canvasCtx.restore();
   }
 
-  function angleBetweenLines(x1, y1, x2, y2, x3, y3) {
-    const m1 = (y2 - y1) / (x2 - x1);
-    const m2 = (y3 - y2) / (x3 - x2);
-    const angle = Math.atan(m2 - m1, 1 + m1 * m2);
+  function angleBetweenLines(landmark1, landmark2, landmark3) {
+    const { x: x1, y: y1 } = landmark1;
+    const { x: x2, y: y2 } = landmark2;
+    const { x: x3, y: y3 } = landmark3;
 
-    const val = ( Math.atan2(y3-y2, x3-x2) - Math.atan2(y1-y2, x1-x2) );
-    console.log(val * 180 / Math.PI)
+    let angle = (Math.atan2(y3 - y2, x3 - x2) - Math.atan2(y1 - y2, x1 - x2));
+    angle = angle * 180 / Math.PI;
 
-    return angle * 180 / Math.PI;
+    if (angle < 0) angle += 360;
+    return angle;
+  }
+
+  function calFullPoseAngles(landmarks) {
+    const right_fullLeftPoseAngles = calLeftPoseAngles(landmarks);
+    const right_fullRightPoseAngles = calRightPoseAngles(landmarks);
+    const hipsToTorsoAngles = calHipsToTorsoAngles(landmarks);
+
+    return { ...right_fullLeftPoseAngles, ...right_fullRightPoseAngles, ...hipsToTorsoAngles }
+  }
+
+  function calLeftPoseAngles(landmarks) {
+    const left_upperPoseAngles = calLeftUpperPoseAngles(landmarks);
+    const left_lowerPoseAngles = calLeftLowerPoseAngles(landmarks);
+
+    return { ...left_upperPoseAngles, ...left_lowerPoseAngles }
+  }
+
+  function calRightPoseAngles(landmarks) {
+    const right_upperPoseAngles = calRightUpperPoseAngles(landmarks);
+    const right_lowerPoseAngles = calRightLowerPoseAngles(landmarks);
+
+    return { ...right_upperPoseAngles, ...right_lowerPoseAngles }
+  }
+
+  function calRightUpperPoseAngles(landmarks) {
+    const right_armAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_SHOULDER],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_ELBOW],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_WRIST]
+    );
+
+    const right_armToTorsoAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_HIP],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_SHOULDER],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_ELBOW],
+    );
+
+    return { right_armAngle, right_armToTorsoAngle }
+  }
+
+  function calLeftUpperPoseAngles(landmarks) {
+    const left_armAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_WRIST],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_ELBOW],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_SHOULDER],
+    );
+
+    const left_armToTorsoAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_ELBOW],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_SHOULDER],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_HIP],
+    );
+
+    return { left_armAngle, left_armToTorsoAngle }
+  }
+
+  function calRightLowerPoseAngles(landmarks) {
+    const right_legAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_HIP],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_KNEE],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_ANKLE]
+    );
+
+    const right_legToHipAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_HIP],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_HIP],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_KNEE],
+    );
+
+    return { right_legAngle, right_legToHipAngle }
+  }
+
+  function calLeftLowerPoseAngles(landmarks) {
+    const left_legAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_ANKLE],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_KNEE],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_HIP],
+    );
+
+    const left_legToHipAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_KNEE],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_HIP],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_HIP],
+    );
+
+    return { left_legAngle, left_legToHipAngle }
+  }
+
+  function calHipsToTorsoAngles(landmarks) {
+    const right_hipToTorsoAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_SHOULDER],
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_HIP],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_HIP],
+    );
+
+    const left_hipToTorsoAngle = angleBetweenLines(
+      landmarks[POSE_LANDMARKS_RIGHT.RIGHT_HIP],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_HIP],
+      landmarks[POSE_LANDMARKS_LEFT.LEFT_SHOULDER],
+    );
+
+    return { right_hipToTorsoAngle, left_hipToTorsoAngle }
   }
 
   return (
